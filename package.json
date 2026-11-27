@@ -1,0 +1,29 @@
+{
+  "name": "backslash-graph-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "start": "node dist/api/server.js",
+    "test:api": "npm run build && node --test test/http.integration.mjs",
+    "format": "prettier --write src test benchmark",
+    "format:check": "prettier --check src test benchmark"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.7",
+    "prettier": "^3.10.1",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@fastify/compress": "^8.0.0",
+    "@fastify/swagger": "^9.0.0",
+    "@fastify/swagger-ui": "6.1.5",
+    "ajv": "^8.20.0",
+    "fastify": "^5.6.0"
+  }
+}
