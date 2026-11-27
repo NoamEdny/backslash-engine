@@ -1,0 +1,20 @@
+export type * from './graph/model.js';
+export { StaticGraphRepository } from './graph/snapshot.js';
+export { loadGraph } from './ingestion/load.js';
+export type { LoadOptions, MissingNodePolicy } from './ingestion/load.js';
+export { InputError } from './ingestion/validation.js';
+export type * from './query/model.js';
+export { QueryError, QueryLimitError } from './query/model.js';
+export { FilterRegistry, createDefaultRegistry } from './query/registry.js';
+export type { FilterDefinition, CustomFilterDefinition, FilterMetadata } from './query/registry.js';
+export { compileQuery } from './query/compiler.js';
+export { buildProductRegion, productRegionSteps } from './query/reachability.js';
+export type { ProductRegion, ReachabilityOptions } from './query/reachability.js';
+export { ExecutionBudget } from './query/budget.js';
+export type { BudgetOptions, StopReason } from './query/budget.js';
+export { executeDfs } from './query/dfs.js';
+export type { DfsResult } from './query/dfs.js';
+export { QueryEngine, executeQuery, executePaths } from './query/engine.js';
+export type { QueryResult, QueryExecutionOptions } from './query/engine.js';
+
+export type { MatchingPath, PathsResult } from './query/paths.js';
