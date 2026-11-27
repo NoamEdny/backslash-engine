@@ -4,7 +4,14 @@ import { gzipSync } from 'node:zlib';
 import { cpus, platform, arch } from 'node:os';
 import { loadGraph, executeQuery, StaticGraphRepository } from '../dist/index.js';
 import { createGraphService } from '../dist/api/service.js';
-const n = Number(process.argv[2] ?? 100000);
+// Usage: node --expose-gc benchmark/run.mjs [nodeCount] [--defaults]
+//   (no flag)   extended budget: 100M operations, 30 s, yield every 16,384
+//   --defaults  the production defaults used by the HTTP service
+const args = process.argv.slice(2);
+const defaults = args.includes('--defaults');
+const unknown = args.filter((arg) => arg.startsWith('--') && arg !== '--defaults');
+if (unknown.length) throw new Error(`Unknown option: ${unknown.join(', ')}`);
+const n = Number(args.find((arg) => !arg.startsWith('--')) ?? 100000);
 if (!Number.isSafeInteger(n) || n < 10 || n > 100000)
   throw new Error('Node count must be 10..100000');
 const query = {
@@ -13,7 +20,9 @@ const query = {
 };
 const mb = (bytes) => Math.round((bytes / 1e6) * 100) / 100;
 const ms = (start) => Math.round((performance.now() - start) * 100) / 100;
-const options = { maxOperations: 100_000_000, timeBudgetMs: 30_000, yieldEvery: 16384 };
+const options = defaults
+  ? {}
+  : { maxOperations: 100_000_000, timeBudgetMs: 30_000, yieldEvery: 16384 };
 function fixture(kind) {
   const id = (i) => `n${String(i).padStart(6, '0')}`;
   const nodes = Array.from({ length: n }, (_, i) => ({
@@ -30,7 +39,11 @@ function fixture(kind) {
       to: Array.from({ length: Math.min(width, n - 1 - i) }, (_, j) => id(i + j + 1)),
     });
   }
+  // `cyclic`: the back edge leaves the only sink, so boundary pruning removes it.
+  // `interior-cycle`: a back edge in the middle that only the DFS can rule out.
   if (kind === 'cyclic') edges.push({ from: id(n - 1), to: id(n - 2) });
+  const middle = Math.floor(n / 2);
+  if (kind === 'interior-cycle') edges.push({ from: id(middle + 1), to: id(middle) });
   return JSON.stringify({ nodes, edges });
 }
 async function run(kind) {
@@ -47,9 +60,12 @@ async function run(kind) {
   start = performance.now();
   const result = await executeQuery(graph, query, options);
   const queryMs = ms(start);
-  assert.equal(result.completeness, 'exact', `${kind}: ${result.stopReason}`);
-  assert.equal(result.nodeCount, n);
-  if (kind === 'cyclic') assert.equal(result.edgeCount, n - 1);
+  // The extended budget must complete every scenario; the defaults are reported as measured.
+  if (!defaults) assert.equal(result.completeness, 'exact', `${kind}: ${result.stopReason}`);
+  if (result.completeness === 'exact') {
+    assert.equal(result.nodeCount, n);
+    if (kind === 'cyclic' || kind === 'interior-cycle') assert.equal(result.edgeCount, n - 1);
+  }
   const service = createGraphService(new StaticGraphRepository(graph), {
     executionOptions: options,
   });
@@ -76,6 +92,7 @@ async function run(kind) {
   console.log(
     JSON.stringify({
       scenario: kind,
+      mode: defaults ? 'defaults' : 'extended',
       nodes: graph.nodeCount,
       edges: graph.edgeCount,
       inputMB: mb(inputBytes),
@@ -85,6 +102,7 @@ async function run(kind) {
       queryMs,
       algorithm: result.algorithm,
       completeness: result.completeness,
+      stopReason: result.stopReason ?? null,
       operations: result.operations,
       matchedNodes: result.nodeCount,
       matchedEdges: result.edgeCount,
@@ -96,7 +114,7 @@ async function run(kind) {
       compressMs: Math.round(compressMs),
     }),
   );
-  if (kind === 'cyclic') {
+  if (kind === 'cyclic' && result.completeness === 'exact') {
     const limited = await executeQuery(graph, query, {
       ...options,
       maxOperations: Math.floor(result.operations * 0.8),
@@ -122,8 +140,10 @@ console.log(
     platform: platform(),
     arch: arch(),
     cpu: cpus()[0]?.model,
-    options,
+    mode: defaults ? 'defaults' : 'extended',
+    options: defaults ? 'production defaults (25M operations, 5 s, yield every 4,096)' : options,
     gc: typeof global.gc === 'function',
   }),
 );
-for (const kind of ['chain', 'branching-dag', 'cyclic', 'dense-dag']) await run(kind);
+for (const kind of ['chain', 'branching-dag', 'cyclic', 'interior-cycle', 'dense-dag'])
+  await run(kind);

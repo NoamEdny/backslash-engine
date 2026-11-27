@@ -1,4 +1,7 @@
-import { loadGraph, executeQuery } from '../../dist/index.js';
+// Differential check: 3,000 random graphs (many cyclic) against an independent
+// brute-force enumeration of matching simple paths. Exits non-zero on any
+// mismatch or any result that is not exact.
+import { loadGraph, executeQuery } from '../dist/index.js';
 let seed = 987654321;
 const rnd = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 2 ** 32;
 const pick = (a) => a[Math.floor(rnd() * a.length)];
@@ -113,3 +116,4 @@ for (let it = 0; it < 3000; it++) {
   }
 }
 console.log({ runs, cyclic, lower, mismatches });
+if (mismatches || lower) process.exitCode = 1;

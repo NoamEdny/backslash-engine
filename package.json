@@ -11,6 +11,9 @@
     "test": "npm run build && node --test test/*.test.mjs",
     "start": "node dist/api/server.js",
     "test:api": "npm run build && node --test test/http.integration.mjs",
+    "bench": "npm run build && node --expose-gc benchmark/run.mjs",
+    "bench:defaults": "npm run build && node --expose-gc benchmark/run.mjs 100000 --defaults",
+    "bench:stress": "npm run build && node benchmark/stress.mjs",
     "format": "prettier --write src test benchmark",
     "format:check": "prettier --check src test benchmark"
   },

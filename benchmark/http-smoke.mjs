@@ -1,36 +1,12 @@
-import { loadGraph, StaticGraphRepository } from '../../dist/index.js';
-import { buildApp } from '../../dist/api/app.js';
-import { readFileSync } from 'node:fs';
-const n = 14;
-const nodes = Array.from({ length: n }, (_, i) => ({
-  name: 'n' + String(i).padStart(2, '0'),
-  kind: i === n - 1 ? 'rds' : 'service',
-  publicExposed: i === 0,
-  vulnerabilities: i === 7 ? [{}] : [],
-}));
-const edges = nodes.map((a, i) => ({
-  from: a.name,
-  to: nodes.filter((_, j) => j !== i).map((b) => b.name),
-}));
-const heavy = loadGraph(JSON.stringify({ nodes, edges }), { version: 'h' });
+// Manual smoke test over a real socket: responsiveness during a heavy query,
+// the concurrency limit, client abort, and error responses.
+import { loadGraph, StaticGraphRepository } from '../dist/index.js';
+import { buildApp } from '../dist/api/app.js';
+import { denseCoreWithFalseDetour } from './fixtures.mjs';
+const heavy = loadGraph(JSON.stringify(denseCoreWithFalseDetour(14)), { version: 'h' });
 const app = await buildApp(new StaticGraphRepository(heavy));
-await app.ready();
-const base = '';
-const fetch = async (url, o = {}) => {
-  if (o.signal) return 'abort-not-supported';
-  const r = await app.inject({
-    url,
-    method: o.method ?? 'GET',
-    headers: o.headers,
-    payload: o.body,
-  });
-  return {
-    status: r.statusCode,
-    headers: { get: (k) => r.headers[k] },
-    json: async () => r.json(),
-    text: async () => r.body,
-  };
-};
+await app.listen({ port: 0, host: '127.0.0.1' });
+const base = `http://127.0.0.1:${app.server.address().port}`;
 const body = JSON.stringify({
   query: {
     operator: 'AND',
