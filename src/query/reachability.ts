@@ -64,14 +64,33 @@ export function* productRegionSteps(
   let tail = 0;
   const depthLimit = query.maxDepth ?? Infinity;
   // Forward BFS starts with the bits contributed by each allowed start.
+  let startCount = 0;
+  let endCount = 0;
+  let onlyStart = -1;
+  let onlyEnd = -1;
   for (let sourceNode = 0; sourceNode < totalNodes; sourceNode++) {
     if (query.starts[sourceNode]) {
       const stateIndex = sourceNode * maskCount + query.nodeMasks[sourceNode]!;
       forward[stateIndex] = 0;
       queue[tail++] = stateIndex;
+      startCount++;
+      onlyStart = sourceNode;
+    }
+    if (query.ends[sourceNode]) {
+      endCount++;
+      onlyEnd = sourceNode;
     }
     yield* tick();
   }
+  // Boundary pruning. A simple path never re-enters its first node or leaves its
+  // last node. With exactly one possible start, no matching path uses an edge into
+  // it; with exactly one possible end, none uses an edge out of it. Removing these
+  // edges before the BFS keeps every matching simple path and removes walks that
+  // only exist by revisiting a boundary node.
+  if (startCount !== 1) onlyStart = -1;
+  if (endCount !== 1) onlyEnd = -1;
+  const usable = (edgeId: number, sourceNode: number, targetNode: number) =>
+    query.allowedEdges[edgeId] === 1 && targetNode !== onlyStart && sourceNode !== onlyEnd;
   while (head < tail) {
     const stateIndex = queue[head++]!;
     const sourceNode = Math.floor(stateIndex / maskCount);
@@ -81,8 +100,8 @@ export function* productRegionSteps(
     if (distance >= depthLimit) continue;
     for (const edgeId of graph.outgoing(sourceNode)) {
       yield* tick();
-      if (!query.allowedEdges[edgeId]) continue;
       const targetNode = graph.edge(edgeId).target;
+      if (!usable(edgeId, sourceNode, targetNode)) continue;
       const nextStateIndex = targetNode * maskCount + (mask | query.nodeMasks[targetNode]!);
       if (forward[nextStateIndex] === -1) {
         forward[nextStateIndex] = distance + 1;
@@ -118,8 +137,8 @@ export function* productRegionSteps(
     const masks = inverseMasks[query.nodeMasks[targetNode]!]![mask]!;
     for (const edgeId of graph.incoming(targetNode)) {
       yield* tick();
-      if (!query.allowedEdges[edgeId]) continue;
       const sourceNode = graph.edge(edgeId).source;
+      if (!usable(edgeId, sourceNode, targetNode)) continue;
       const sourceBits = query.nodeMasks[sourceNode]!;
       for (const previousMask of masks) {
         yield* tick();
@@ -154,8 +173,8 @@ export function* productRegionSteps(
   // Test each transition, not just its endpoints: the masks must be compatible.
   for (let edgeId = 0; edgeId < totalEdges; edgeId++) {
     yield* tick();
-    if (!query.allowedEdges[edgeId]) continue;
     const { source: sourceNode, target: targetNode } = graph.edge(edgeId);
+    if (!usable(edgeId, sourceNode, targetNode)) continue;
     if (!nodes[sourceNode] || !nodes[targetNode]) continue;
     for (let mask = 0; mask < maskCount; mask++) {
       yield* tick();

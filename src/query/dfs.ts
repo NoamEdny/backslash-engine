@@ -2,6 +2,7 @@ import type { GraphSnapshot } from '../graph/model.js';
 import type { CompiledQuery } from './model.js';
 import type { ProductRegion } from './reachability.js';
 import { ExecutionBudget, type StopReason } from './budget.js';
+import { findWitness } from './witness.js';
 
 export interface DfsResult {
   readonly nodes: Uint8Array;
@@ -66,6 +67,39 @@ export async function executeDfs(
   // Every yielded step performs bounded work. A matching path is a witness
   // for each of its items. Even interrupted commits preserve edge endpoints.
   function* steps(): Generator<void, void, void> {
+    // First try one targeted witness per unconfirmed edge. This confirms most
+    // items of dense cyclic regions cheaply; the DFS below handles the rest and
+    // is still the only way to prove that an item is on no matching path.
+    // The DFS stack is empty here, so `visited` is free to use as scratch.
+    // Failed attempts can be expensive on long paths, so witnesses may use at most
+    // half of the remaining operations; the exhaustive DFS always keeps the rest.
+    const witnessStart = budget.operations;
+    const witnessShare = Math.floor(budget.remainingOperations / 2);
+    for (
+      let edgeId = 0;
+      edgeId < graph.edgeCount && !complete() && budget.operations - witnessStart < witnessShare;
+      edgeId++
+    ) {
+      yield;
+      if (!region.edges[edgeId] || edges[edgeId]) continue;
+      const attempt = findWitness(graph, query, region, edgeId, visited);
+      let step = attempt.next();
+      while (!step.done && budget.operations - witnessStart < witnessShare) {
+        yield;
+        step = attempt.next();
+      }
+      if (!step.done) {
+        // An interrupted witness may leave scratch marks. Clear them before DFS.
+        attempt.return(undefined);
+        visited.fill(0);
+        break;
+      }
+      const witness = step.value;
+      if (!witness) continue;
+      for (const node of witness.nodes) markNode(node);
+      for (const id of witness.edges) markEdge(id);
+    }
+    if (complete()) return;
     for (let start = 0; start < graph.nodeCount; start++) {
       yield;
       if (!query.starts[start] || !region.nodes[start]) continue;
