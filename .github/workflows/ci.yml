@@ -21,3 +21,38 @@ jobs:
       - run: npm test
       - run: npm run test:api
       - run: npm audit --audit-level=moderate
+
+  docker:
+    name: Docker smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build Docker image
+        run: docker build -t backslash-engine:ci .
+
+      - name: Start container
+        run: |
+          docker run -d \
+            --name backslash-ci \
+            -p 127.0.0.1:3000:3000 \
+            backslash-engine:ci
+
+      - name: Verify health endpoint
+        run: |
+          for i in $(seq 1 30); do
+            if curl --fail --silent http://localhost:3000/health\; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server failed to become healthy"
+          exit 1
+
+      - name: Print container logs
+        if: always()
+        run: docker logs backslash-ci
+
+      - name: Remove container
+        if: always()
+        run: docker rm -f backslash-ci
